@@ -285,6 +285,11 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                 </p>
               </div>
             </div>
+            <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl">
+              <span className="text-lg font-black text-blue-500 tabular-nums">{score1}</span>
+              <span className="text-xs text-gray-600">-</span>
+              <span className="text-lg font-black text-rose-500 tabular-nums">{score2}</span>
+            </div>
             <button onClick={() => { setShowPicaPicaModal(false); setPicaRound(1); }} className="p-2.5 bg-white/5 rounded-full text-gray-500 active:scale-90 transition-all"><X size={20} /></button>
           </header>
 
