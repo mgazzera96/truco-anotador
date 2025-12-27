@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Team, PicaDuel } from '../types';
 import Fosforos from './Fosforos';
 import { Plus, Minus, Home, RotateCcw, Trophy, Tent, ChevronRight, Zap, X, Check, Repeat, RefreshCw, Undo2 } from 'lucide-react';
@@ -11,14 +11,15 @@ interface ScoreBoardProps {
   score2: number;
   maxPoints: number;
   onUpdateScore: (teamIndex: 1 | 2, delta: number, setPicaNext?: boolean) => void;
+  onUpdatePicaHistory: (duels: PicaDuel[]) => void;
   onReset: () => void;
   onHome: () => void;
-  onFinish: (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => void;
-  onRematch: (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => void;
+  onFinish: (notes: string, duermeAfuera: boolean) => void;
+  onRematch: (notes: string, duermeAfuera: boolean) => void;
 }
 
 const ScoreBoard: React.FC<ScoreBoardProps> = ({
-  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, onUpdateScore, onReset, onHome, onFinish, onRematch
+  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, onUpdateScore, onUpdatePicaHistory, onReset, onHome, onFinish, onRematch
 }) => {
   const isGameOver = score1 >= maxPoints || score2 >= maxPoints;
   const [notes, setNotes] = useState('');
@@ -37,8 +38,6 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [showPicaPicaModal, setShowPicaPicaModal] = useState(false);
   const [picaMatchScores, setPicaMatchScores] = useState<[number, number][]>([[0,0], [0,0], [0,0]]);
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
-  const [gamePicaHistory, setGamePicaHistory] = useState<PicaDuel[][]>([]);
-  const gamePicaHistoryRef = useRef<PicaDuel[][]>([]);
   
   // Estado para undo de última mano
   const [lastAction, setLastAction] = useState<{
@@ -82,10 +81,9 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
       s2: scores[1]
     }));
 
-    // Usar ref para tener el valor actualizado inmediatamente (fix race condition)
-    const newHistory = [...gamePicaHistoryRef.current, roundDuels];
-    gamePicaHistoryRef.current = newHistory;
-    setGamePicaHistory(newHistory);
+    // Guardar en Firestore via App.tsx (se persiste automaticamente)
+    onUpdatePicaHistory(roundDuels);
+    
     const totalT1 = picaMatchScores.reduce((acc, curr) => acc + curr[0], 0);
     const totalT2 = picaMatchScores.reduce((acc, curr) => acc + curr[1], 0);
     const diff = totalT1 - totalT2;
@@ -386,12 +384,12 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
             <div className="pt-4 space-y-4">
               <button 
-                onClick={() => onRematch(notes, isDuermeAfuera, gamePicaHistoryRef.current)} 
+                onClick={() => onRematch(notes, isDuermeAfuera)} 
                 className="w-full py-6 bg-blue-600 text-white font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-[0_15px_40px_rgba(37,99,235,0.3)] text-xs flex items-center justify-center gap-3 italic"
               >
                 REVANCHA <RefreshCw size={20} strokeWidth={3} />
               </button>
-              <button onClick={() => onFinish(notes, isDuermeAfuera, gamePicaHistoryRef.current)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
+              <button onClick={() => onFinish(notes, isDuermeAfuera)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
                 CERRAR PARTIDA <ChevronRight size={20} strokeWidth={3} />
               </button>
               <button onClick={onReset} className="w-full py-3 text-[10px] font-black text-gray-800 uppercase tracking-[0.4em] hover:text-rose-500 transition-colors italic">DESCARTAR REGISTRO</button>

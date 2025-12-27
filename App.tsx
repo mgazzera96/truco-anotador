@@ -25,6 +25,7 @@ const App: React.FC = () => {
     score2: number;
     maxPoints: 15 | 30;
     nextHandIsPica: boolean;
+    picaHistory: PicaDuel[][];
   } | null>(null);
 
   // Cargar datos desde Firestore al iniciar
@@ -79,7 +80,7 @@ const App: React.FC = () => {
   }, [currentGame, loading]);
 
   const handleStartGame = (t1: Team, t2: Team, max: 15 | 30) => {
-    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false });
+    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false, picaHistory: [] });
     setView(GameView.PLAYING);
   };
 
@@ -100,7 +101,15 @@ const App: React.FC = () => {
     });
   };
 
-  const saveToHistory = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
+  const updatePicaHistory = (newDuels: PicaDuel[]) => {
+    if (!currentGame) return;
+    setCurrentGame(prev => {
+      if (!prev) return null;
+      return { ...prev, picaHistory: [...(prev.picaHistory || []), newDuels] };
+    });
+  };
+
+  const saveToHistory = (notes: string, duermeAfuera: boolean) => {
     if (!currentGame) return null;
     const winner = currentGame.score1 >= currentGame.maxPoints ? currentGame.team1 : currentGame.team2;
     
@@ -117,32 +126,33 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       notes,
       duermeAfuera,
-      picaHistory
+      picaHistory: currentGame.picaHistory || []
     };
     
     setHistory(prev => [newRecord, ...prev].slice(0, 100));
     return newRecord;
   };
 
-  const handleFinishGame = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
-    saveToHistory(notes, duermeAfuera, picaHistory);
+  const handleFinishGame = (notes: string, duermeAfuera: boolean) => {
+    saveToHistory(notes, duermeAfuera);
     setCurrentGame(null);
     setView(GameView.SETUP);
   };
 
-  const handleRematch = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
-    saveToHistory(notes, duermeAfuera, picaHistory);
+  const handleRematch = (notes: string, duermeAfuera: boolean) => {
+    saveToHistory(notes, duermeAfuera);
     if (currentGame) {
       setCurrentGame({
         ...currentGame,
         score1: 0,
         score2: 0,
-        nextHandIsPica: false
+        nextHandIsPica: false,
+        picaHistory: []
       });
     }
   };
 
-  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false });
+  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false, picaHistory: [] });
 
   if (loading) {
     return (
@@ -221,6 +231,7 @@ const App: React.FC = () => {
             score2={currentGame.score2} 
             maxPoints={currentGame.maxPoints} 
             onUpdateScore={updateScore} 
+            onUpdatePicaHistory={updatePicaHistory}
             onReset={resetGame} 
             onHome={() => setView(GameView.SETUP)} 
             onFinish={handleFinishGame}
