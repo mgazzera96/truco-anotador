@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Team, PicaDuel } from '../types';
+import { Team, PicaDuel, Player } from '../types';
 import Fosforos from './Fosforos';
 import { Plus, Minus, Home, RotateCcw, Trophy, Tent, ChevronRight, Zap, X, Check, Repeat, RefreshCw, Undo2 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ interface ScoreBoardProps {
   score1: number;
   score2: number;
   maxPoints: number;
+  players: Player[];
   onUpdateScore: (teamIndex: 1 | 2, delta: number, setPicaNext?: boolean) => void;
   onUpdatePicaHistory: (duels: PicaDuel[]) => void;
   onReset: () => void;
@@ -19,8 +20,12 @@ interface ScoreBoardProps {
 }
 
 const ScoreBoard: React.FC<ScoreBoardProps> = ({
-  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, onUpdateScore, onUpdatePicaHistory, onReset, onHome, onFinish, onRematch
+  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, players, onUpdateScore, onUpdatePicaHistory, onReset, onHome, onFinish, onRematch
 }) => {
+  // Helper para obtener nombre de jugador por ID
+  const getPlayerName = (playerId: string) => players.find(p => p.id === playerId)?.name || 'Desconocido';
+  const getTeamPlayerNames = (team: Team) => team.playerIds.map(id => getPlayerName(id)).join(' · ');
+
   const isGameOver = score1 >= maxPoints || score2 >= maxPoints;
   const [notes, setNotes] = useState('');
   const [isDuermeAfuera, setIsDuermeAfuera] = useState(false);
@@ -29,7 +34,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [handScore1, setHandScore1] = useState(0);
   const [handScore2, setHandScore2] = useState(0);
 
-  const is3v3 = initialTeam1.players.length === 3 && initialTeam2.players.length === 3;
+  const is3v3 = initialTeam1.playerIds.length === 3 && initialTeam2.playerIds.length === 3;
   const [lastHandWasPica, setLastHandWasPica] = useState(false);
   
   const isPicaRange = is3v3 && (score1 >= 5 || score2 >= 5) && (score1 < 25 && score2 < 25);
@@ -75,8 +80,8 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
   const handlePicaPicaSubmit = () => {
     const roundDuels: PicaDuel[] = picaMatchScores.map((scores, idx) => ({
-      p1: initialTeam1.players[idx],
-      p2: localTeam2.players[idx],
+      p1Id: initialTeam1.playerIds[idx],
+      p2Id: localTeam2.playerIds[idx],
       s1: scores[0],
       s2: scores[1]
     }));
@@ -123,17 +128,17 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
     } else if (swapIndex === idx) {
       setSwapIndex(null);
     } else {
-      const newPlayers = [...localTeam2.players];
-      const temp = newPlayers[swapIndex];
-      newPlayers[swapIndex] = newPlayers[idx];
-      newPlayers[idx] = temp;
-      
+      const newPlayerIds = [...localTeam2.playerIds];
+      const temp = newPlayerIds[swapIndex];
+      newPlayerIds[swapIndex] = newPlayerIds[idx];
+      newPlayerIds[idx] = temp;
+
       const newScores = [...picaMatchScores] as [number, number][];
       const tempScore = newScores[swapIndex];
       newScores[swapIndex] = newScores[idx];
       newScores[idx] = tempScore;
 
-      setLocalTeam2({ ...localTeam2, players: newPlayers });
+      setLocalTeam2({ ...localTeam2, playerIds: newPlayerIds });
       setPicaMatchScores(newScores);
       setSwapIndex(null);
     }
@@ -177,7 +182,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
              <div className="mb-4 text-center w-full px-2">
                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1">{initialTeam1.name}</span>
                <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider block mb-3 truncate">
-                 {initialTeam1.players.join(' · ')}
+                 {getTeamPlayerNames(initialTeam1)}
                </span>
                <div className="text-7xl sm:text-8xl font-black text-white tracking-tighter tabular-nums score-val leading-none italic">
                  {Math.min(score1 + handScore1, maxPoints)}
@@ -196,7 +201,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
              <div className="mb-4 text-center w-full px-2">
                <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest block mb-1">{initialTeam2.name}</span>
                <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider block mb-3 truncate">
-                 {initialTeam2.players.join(' · ')}
+                 {getTeamPlayerNames(initialTeam2)}
                </span>
                <div className="text-7xl sm:text-8xl font-black text-white tracking-tighter tabular-nums score-val leading-none italic">
                  {Math.min(score2 + handScore2, maxPoints)}
@@ -279,7 +284,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                 <div className="flex items-center justify-between px-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-[7px] font-black text-blue-500 uppercase opacity-40 mb-0.5 tracking-widest">Nosotros</p>
-                    <p className="text-sm font-black text-white truncate leading-tight uppercase italic">{initialTeam1.players[idx]}</p>
+                    <p className="text-sm font-black text-white truncate leading-tight uppercase italic">{getPlayerName(initialTeam1.playerIds[idx])}</p>
                   </div>
                   
                   <div className="mx-3 text-[9px] font-black text-white/5 italic uppercase shrink-0">vs</div>
@@ -288,11 +293,11 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                     <p className="text-[7px] font-black text-rose-500 uppercase opacity-40 mb-0.5 tracking-widest flex items-center justify-end gap-1">
                       Ellos <Repeat size={8} />
                     </p>
-                    <button 
+                    <button
                       onClick={() => handleSwapLocalPlayer(idx)}
                       className={`text-sm font-black text-right truncate leading-tight uppercase italic transition-all ${swapIndex === idx ? 'text-amber-500 underline underline-offset-4 decoration-amber-500/50' : 'text-white'}`}
                     >
-                      {localTeam2.players[idx]}
+                      {getPlayerName(localTeam2.playerIds[idx])}
                     </button>
                   </div>
                 </div>
