@@ -1,0 +1,5 @@
+{
+  "name": "Truco Argentino - Anotador Pro",
+  "description": "Una aplicación simple y elegante para anotar los puntos del truco argentino, con soporte para equipos, leaderboard y visualización clásica de fósforos.",
+  "requestFramePermissions": []
+}
