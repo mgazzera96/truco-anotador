@@ -176,6 +176,19 @@ const App: React.FC = () => {
 
   const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false, picaHistory: [] });
 
+  const handleDeleteGame = (gameId: string) => {
+    const gameToDelete = history.find(g => g.id === gameId);
+    if (!gameToDelete) return;
+
+    // Restar 1 win al equipo ganador
+    setTeams(prev => prev.map(t =>
+      t.name === gameToDelete.winnerName ? { ...t, wins: Math.max(0, t.wins - 1) } : t
+    ));
+
+    // Eliminar del historial
+    setHistory(prev => prev.filter(g => g.id !== gameId));
+  };
+
   if (loading) {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-4">
@@ -262,7 +275,7 @@ const App: React.FC = () => {
         )}
 
         {view === GameView.LEADERBOARD && (
-          <Leaderboard history={history} onBack={() => setView(GameView.SETUP)} />
+          <Leaderboard history={history} onBack={() => setView(GameView.SETUP)} onDeleteGame={handleDeleteGame} />
         )}
       </main>
     </div>

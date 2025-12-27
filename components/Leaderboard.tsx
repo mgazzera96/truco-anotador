@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
 import { GameRecord, PicaDuel } from '../types';
-import { ArrowLeft, Tent, MessageSquare, Trophy, Target, Zap, ChevronDown, ChevronUp, Users, History, BarChart3, Medal, Calendar } from 'lucide-react';
+import { ArrowLeft, Tent, MessageSquare, Trophy, Target, Zap, ChevronDown, ChevronUp, Users, History, BarChart3, Medal, Calendar, Trash2 } from 'lucide-react';
 
 interface LeaderboardProps {
   history: GameRecord[];
   onBack: () => void;
+  onDeleteGame: (gameId: string) => void;
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack, onDeleteGame }) => {
   const [activeTab, setActiveTab] = useState<'EQUIPOS' | 'HISTORIAL' | 'PICA'>('EQUIPOS');
   const [expandedGame, setExpandedGame] = useState<string | null>(null);
 
@@ -145,9 +146,15 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
                      <Calendar size={12} className="text-gray-600" />
                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{formatDate(game.timestamp)}</span>
                    </div>
-                   <div className="flex gap-2.5">
+                   <div className="flex gap-2.5 items-center">
                      {game.picaHistory && game.picaHistory.length > 0 && <span className="bg-amber-500/10 text-amber-500 text-[9px] font-black px-3 py-1 rounded-full border border-amber-500/20 italic">3v3 PICA</span>}
                      <span className="bg-white/5 text-gray-500 text-[9px] font-black px-3 py-1 rounded-full border border-white/5 italic">A {game.maxPoints}</span>
+                     <button
+                       onClick={() => confirm('¿Borrar esta partida?') && onDeleteGame(game.id)}
+                       className="p-2 text-gray-600 hover:text-rose-500 active:scale-90 transition-all ml-1"
+                     >
+                       <Trash2 size={14} />
+                     </button>
                    </div>
                 </div>
                 
