@@ -201,7 +201,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                </div>
              </div>
              <div className="scale-75 sm:scale-90">
-               <Fosforos points={Math.min(score1 + handScore1, maxPoints)} colorClass="bg-blue-500" />
+               <Fosforos points={Math.min(score1 + handScore1, maxPoints)} pendingPoints={handScore1} colorClass="bg-blue-500" />
              </div>
           </div>
 
@@ -220,7 +220,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                </div>
              </div>
              <div className="scale-75 sm:scale-90">
-               <Fosforos points={Math.min(score2 + handScore2, maxPoints)} colorClass="bg-rose-500" />
+               <Fosforos points={Math.min(score2 + handScore2, maxPoints)} pendingPoints={handScore2} colorClass="bg-rose-500" />
              </div>
           </div>
         </div>
