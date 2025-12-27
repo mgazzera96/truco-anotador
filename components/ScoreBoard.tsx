@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Team, PicaDuel } from '../types';
 import Fosforos from './Fosforos';
-import { Plus, Minus, Home, RotateCcw, Trophy, Tent, ChevronRight, Zap, X, Check, Repeat, RefreshCw } from 'lucide-react';
+import { Plus, Minus, Home, RotateCcw, Trophy, Tent, ChevronRight, Zap, X, Check, Repeat, RefreshCw, Undo2 } from 'lucide-react';
 
 interface ScoreBoardProps {
   team1: Team;
@@ -38,6 +38,14 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [picaMatchScores, setPicaMatchScores] = useState<[number, number][]>([[0,0], [0,0], [0,0]]);
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
   const [gamePicaHistory, setGamePicaHistory] = useState<PicaDuel[][]>([]);
+  const gamePicaHistoryRef = useRef<PicaDuel[][]>([]);
+  
+  // Estado para undo de última mano
+  const [lastAction, setLastAction] = useState<{
+    delta1: number;
+    delta2: number;
+    wasPica: boolean;
+  } | null>(null);
 
   // Determinar perdedor
   const loserName = score1 >= maxPoints ? initialTeam2.name : initialTeam1.name;
@@ -57,6 +65,8 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
   const confirmRedonda = () => {
     if (isGameOver) return;
+    // Guardar la acción para poder deshacer
+    setLastAction({ delta1: handScore1, delta2: handScore2, wasPica: false });
     onUpdateScore(1, handScore1);
     onUpdateScore(2, handScore2);
     setLastHandWasPica(false);
@@ -72,10 +82,18 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
       s2: scores[1]
     }));
 
-    setGamePicaHistory(prev => [...prev, roundDuels]);
+    // Usar ref para tener el valor actualizado inmediatamente (fix race condition)
+    const newHistory = [...gamePicaHistoryRef.current, roundDuels];
+    gamePicaHistoryRef.current = newHistory;
+    setGamePicaHistory(newHistory);
     const totalT1 = picaMatchScores.reduce((acc, curr) => acc + curr[0], 0);
     const totalT2 = picaMatchScores.reduce((acc, curr) => acc + curr[1], 0);
     const diff = totalT1 - totalT2;
+    
+    // Guardar la acción para poder deshacer
+    const delta1 = diff > 0 ? diff : 0;
+    const delta2 = diff < 0 ? Math.abs(diff) : 0;
+    setLastAction({ delta1, delta2, wasPica: true });
     
     if (diff > 0) onUpdateScore(1, diff);
     else if (diff < 0) onUpdateScore(2, Math.abs(diff));
@@ -83,6 +101,16 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
     setLastHandWasPica(true);
     setShowPicaPicaModal(false);
     setPicaMatchScores([[0,0], [0,0], [0,0]]);
+  };
+
+  const handleUndo = () => {
+    if (!lastAction) return;
+    // Restar los puntos agregados
+    if (lastAction.delta1 > 0) onUpdateScore(1, -lastAction.delta1);
+    if (lastAction.delta2 > 0) onUpdateScore(2, -lastAction.delta2);
+    // Restaurar estado de pica si corresponde
+    if (lastAction.wasPica) setLastHandWasPica(false);
+    setLastAction(null);
   };
 
   const updatePicaScore = (matchIdx: number, teamIdx: 0 | 1, delta: number) => {
@@ -194,7 +222,15 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                 <button onClick={() => setHandScore1(p => Math.max(0, p - 1))} className="w-14 h-10 bg-white/5 rounded-xl flex items-center justify-center text-gray-600 active:bg-white/10"><Minus size={20} strokeWidth={3} /></button>
               </div>
 
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex flex-col items-center gap-2 relative">
+                {lastAction && (
+                  <button 
+                    onClick={handleUndo}
+                    className="absolute -top-14 left-1/2 -translate-x-1/2 px-4 py-2 bg-amber-500/20 border border-amber-500/30 rounded-full text-amber-500 text-[10px] font-black uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all animate-in fade-in slide-in-from-bottom-2"
+                  >
+                    <Undo2 size={14} /> Deshacer
+                  </button>
+                )}
                 <button 
                   onClick={confirmRedonda}
                   disabled={isGameOver || (handScore1 === 0 && handScore2 === 0)}
@@ -350,12 +386,12 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
             <div className="pt-4 space-y-4">
               <button 
-                onClick={() => onRematch(notes, isDuermeAfuera, gamePicaHistory)} 
+                onClick={() => onRematch(notes, isDuermeAfuera, gamePicaHistoryRef.current)} 
                 className="w-full py-6 bg-blue-600 text-white font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-[0_15px_40px_rgba(37,99,235,0.3)] text-xs flex items-center justify-center gap-3 italic"
               >
                 REVANCHA <RefreshCw size={20} strokeWidth={3} />
               </button>
-              <button onClick={() => onFinish(notes, isDuermeAfuera, gamePicaHistory)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
+              <button onClick={() => onFinish(notes, isDuermeAfuera, gamePicaHistoryRef.current)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
                 CERRAR PARTIDA <ChevronRight size={20} strokeWidth={3} />
               </button>
               <button onClick={onReset} className="w-full py-3 text-[10px] font-black text-gray-800 uppercase tracking-[0.4em] hover:text-rose-500 transition-colors italic">DESCARTAR REGISTRO</button>
