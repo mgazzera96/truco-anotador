@@ -43,6 +43,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [showPicaPicaModal, setShowPicaPicaModal] = useState(false);
   const [picaMatchScores, setPicaMatchScores] = useState<[number, number][]>([[0,0], [0,0], [0,0]]);
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
+  const [picaRound, setPicaRound] = useState(1);
   
   // Estado para undo de última mano
   const [lastAction, setLastAction] = useState<{
@@ -86,24 +87,32 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
       s2: scores[1]
     }));
 
-    // Guardar en Firestore via App.tsx (se persiste automaticamente)
+    // Guardar en Firestore via App.tsx (se persiste automaticamente para stats)
     onUpdatePicaHistory(roundDuels);
-    
+
     const totalT1 = picaMatchScores.reduce((acc, curr) => acc + curr[0], 0);
     const totalT2 = picaMatchScores.reduce((acc, curr) => acc + curr[1], 0);
     const diff = totalT1 - totalT2;
-    
-    // Guardar la acción para poder deshacer
+
+    if (diff === 0) {
+      // EMPATE: resetear scores pero mantener modal abierto para repetir
+      setPicaMatchScores([[0,0], [0,0], [0,0]]);
+      setPicaRound(prev => prev + 1);
+      return;
+    }
+
+    // Hay ganador: comportamiento normal
     const delta1 = diff > 0 ? diff : 0;
     const delta2 = diff < 0 ? Math.abs(diff) : 0;
     setLastAction({ delta1, delta2, wasPica: true });
-    
+
     if (diff > 0) onUpdateScore(1, diff);
-    else if (diff < 0) onUpdateScore(2, Math.abs(diff));
-    
+    else onUpdateScore(2, Math.abs(diff));
+
     setLastHandWasPica(true);
     setShowPicaPicaModal(false);
     setPicaMatchScores([[0,0], [0,0], [0,0]]);
+    setPicaRound(1);
   };
 
   const handleUndo = () => {
@@ -271,10 +280,12 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
               <div className="p-2.5 bg-amber-500 rounded-xl text-black"><Zap size={18} fill="currentColor" /></div>
               <div>
                 <h3 className="text-lg font-black text-white uppercase italic tracking-tighter leading-none">Duelos Pica</h3>
-                <p className="text-[8px] font-black text-amber-500/50 uppercase tracking-[0.2em] mt-1">Resultados por silla</p>
+                <p className="text-[8px] font-black text-amber-500/50 uppercase tracking-[0.2em] mt-1">
+                  {picaRound > 1 ? `Ronda ${picaRound} · Empate anterior` : 'Resultados por silla'}
+                </p>
               </div>
             </div>
-            <button onClick={() => setShowPicaPicaModal(false)} className="p-2.5 bg-white/5 rounded-full text-gray-500 active:scale-90 transition-all"><X size={20} /></button>
+            <button onClick={() => { setShowPicaPicaModal(false); setPicaRound(1); }} className="p-2.5 bg-white/5 rounded-full text-gray-500 active:scale-90 transition-all"><X size={20} /></button>
           </header>
 
           <div className="flex-1 flex flex-col px-3 py-2 space-y-1.5 overflow-hidden">
