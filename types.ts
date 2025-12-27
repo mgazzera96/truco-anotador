@@ -1,16 +1,21 @@
 
+export interface Player {
+  id: string;
+  name: string;
+}
+
 export interface Team {
   id: string;
   name: string;
-  players: string[];
+  playerIds: string[];  // IDs de jugadores de la lista maestra
   wins: number;
 }
 
 export interface PicaDuel {
-  p1: string; // Jugador de Equipo 1
-  p2: string; // Jugador de Equipo 2
-  s1: number; // Puntos de Jugador 1
-  s2: number; // Puntos de Jugador 2
+  p1Id: string; // ID Jugador de Equipo 1
+  p2Id: string; // ID Jugador de Equipo 2
+  s1: number;   // Puntos de Jugador 1
+  s2: number;   // Puntos de Jugador 2
 }
 
 export interface GameRecord {

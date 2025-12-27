@@ -1,21 +1,31 @@
 
 import React, { useState, useEffect } from 'react';
-import { Team, GameView, GameRecord, PicaDuel } from './types';
+import { Team, GameView, GameRecord, PicaDuel, Player } from './types';
 import TeamSetup from './components/TeamSetup';
 import ScoreBoard from './components/ScoreBoard';
 import Leaderboard from './components/Leaderboard';
 import { db } from './firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
+const DEFAULT_PLAYERS: Player[] = [
+  { id: 'player-1', name: 'Juanse' },
+  { id: 'player-2', name: 'Tati' },
+  { id: 'player-3', name: 'Gordo' },
+  { id: 'player-4', name: 'Guido' },
+  { id: 'player-5', name: 'Mateo' },
+  { id: 'player-6', name: 'Fede' },
+];
+
 const DEFAULT_TEAMS: Team[] = [
-  { id: 'team-1', name: 'Nosotros', players: ['Jugador 1', 'Jugador 2', 'Jugador 3'], wins: 0 },
-  { id: 'team-2', name: 'Ellos', players: ['Rival 1', 'Rival 2', 'Rival 3'], wins: 0 }
+  { id: 'team-1', name: 'Nosotros', playerIds: ['player-1', 'player-2', 'player-3'], wins: 0 },
+  { id: 'team-2', name: 'Ellos', playerIds: ['player-4', 'player-5', 'player-6'], wins: 0 }
 ];
 
 const App: React.FC = () => {
   const [view, setView] = useState<GameView>(GameView.SETUP);
   const [loading, setLoading] = useState(true);
   
+  const [players, setPlayers] = useState<Player[]>(DEFAULT_PLAYERS);
   const [teams, setTeams] = useState<Team[]>(DEFAULT_TEAMS);
   const [history, setHistory] = useState<GameRecord[]>([]);
   const [currentGame, setCurrentGame] = useState<{
@@ -25,37 +35,128 @@ const App: React.FC = () => {
     score2: number;
     maxPoints: 15 | 30;
     nextHandIsPica: boolean;
+    picaHistory: PicaDuel[][];
   } | null>(null);
 
   // Cargar datos desde Firestore al iniciar
   useEffect(() => {
+    const unsubPlayers = onSnapshot(doc(db, 'config', 'players'), (snapshot) => {
+      if (snapshot.exists() && snapshot.data().list?.length > 0) {
+        setPlayers(snapshot.data().list);
+      } else {
+        // Si no existe o está vacío, usar defaults
+        setPlayers(DEFAULT_PLAYERS);
+      }
+    });
+
     const unsubTeams = onSnapshot(doc(db, 'config', 'teams'), (snapshot) => {
       if (snapshot.exists()) {
-        setTeams(snapshot.data().list || DEFAULT_TEAMS);
+        const teamsData = snapshot.data().list || DEFAULT_TEAMS;
+        const newPlayersToAdd: Player[] = [];
+
+        // Migración: convertir formato viejo (players: string[]) a nuevo (playerIds: string[])
+        const migratedTeams = teamsData.map((team: any) => {
+          if (team.players && !team.playerIds) {
+            // Formato viejo: crear IDs para cada jugador
+            const playerIds = team.players.map((name: string) => {
+              // Buscar si ya existe un jugador con ese nombre
+              const existingPlayer = DEFAULT_PLAYERS.find(p => p.name.toLowerCase() === name.toLowerCase());
+              if (existingPlayer) return existingPlayer.id;
+
+              // Si no, crear un nuevo jugador
+              const newId = 'player-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+              const alreadyAdded = newPlayersToAdd.find(p => p.name.toLowerCase() === name.toLowerCase());
+              if (!alreadyAdded) {
+                newPlayersToAdd.push({ id: newId, name });
+              }
+              return alreadyAdded?.id || newId;
+            });
+            return { ...team, playerIds, players: undefined };
+          }
+          return team;
+        });
+
+        // Agregar jugadores nuevos encontrados en equipos viejos
+        if (newPlayersToAdd.length > 0) {
+          setPlayers(prev => [...prev, ...newPlayersToAdd]);
+        }
+
+        setTeams(migratedTeams);
       }
       setLoading(false);
     });
 
     const unsubHistory = onSnapshot(doc(db, 'config', 'history'), (snapshot) => {
       if (snapshot.exists()) {
-        setHistory(snapshot.data().list || []);
+        // Deserializar picaHistory de cada GameRecord (guardado como JSON string para evitar nested arrays)
+        const list = (snapshot.data().list || []).map((record: GameRecord) => ({
+          ...record,
+          picaHistory: typeof record.picaHistory === 'string' 
+            ? JSON.parse(record.picaHistory) 
+            : (record.picaHistory || [])
+        }));
+        setHistory(list);
       }
     });
 
     const unsubCurrentGame = onSnapshot(doc(db, 'config', 'currentGame'), (snapshot) => {
       if (snapshot.exists() && snapshot.data().game) {
-        setCurrentGame(snapshot.data().game);
+        const game = snapshot.data().game;
+        // Deserializar picaHistory (guardado como JSON string para evitar nested arrays)
+        const picaHistory = typeof game.picaHistory === 'string'
+          ? JSON.parse(game.picaHistory)
+          : (game.picaHistory || []);
+
+        const newPlayersFromGame: Player[] = [];
+
+        // Migrar teams dentro del currentGame si tienen formato viejo
+        const migrateTeam = (team: any) => {
+          if (team.players && !team.playerIds) {
+            const playerIds = team.players.map((name: string) => {
+              const existingPlayer = DEFAULT_PLAYERS.find(p => p.name.toLowerCase() === name.toLowerCase());
+              if (existingPlayer) return existingPlayer.id;
+
+              const newId = 'player-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+              const alreadyAdded = newPlayersFromGame.find(p => p.name.toLowerCase() === name.toLowerCase());
+              if (!alreadyAdded) {
+                newPlayersFromGame.push({ id: newId, name });
+              }
+              return alreadyAdded?.id || newId;
+            });
+            return { ...team, playerIds };
+          }
+          return team;
+        };
+
+        if (newPlayersFromGame.length > 0) {
+          setPlayers(prev => [...prev, ...newPlayersFromGame]);
+        }
+
+        setCurrentGame({
+          ...game,
+          team1: migrateTeam(game.team1),
+          team2: migrateTeam(game.team2),
+          picaHistory
+        });
       } else {
         setCurrentGame(null);
       }
     });
 
     return () => {
+      unsubPlayers();
       unsubTeams();
       unsubHistory();
       unsubCurrentGame();
     };
   }, []);
+
+  // Guardar players en Firestore cuando cambien
+  useEffect(() => {
+    if (!loading) {
+      setDoc(doc(db, 'config', 'players'), { list: players });
+    }
+  }, [players, loading]);
 
   // Guardar teams en Firestore cuando cambien
   useEffect(() => {
@@ -67,19 +168,29 @@ const App: React.FC = () => {
   // Guardar history en Firestore cuando cambie
   useEffect(() => {
     if (!loading) {
-      setDoc(doc(db, 'config', 'history'), { list: history });
+      // Serializar picaHistory de cada GameRecord (Firestore no soporta nested arrays)
+      const historyToSave = history.map(record => ({
+        ...record,
+        picaHistory: JSON.stringify(record.picaHistory || [])
+      }));
+      setDoc(doc(db, 'config', 'history'), { list: historyToSave });
     }
   }, [history, loading]);
 
   // Guardar currentGame en Firestore cuando cambie
   useEffect(() => {
     if (!loading) {
-      setDoc(doc(db, 'config', 'currentGame'), { game: currentGame });
+      // Serializar picaHistory (Firestore no soporta nested arrays)
+      const gameToSave = currentGame ? {
+        ...currentGame,
+        picaHistory: JSON.stringify(currentGame.picaHistory || [])
+      } : null;
+      setDoc(doc(db, 'config', 'currentGame'), { game: gameToSave });
     }
   }, [currentGame, loading]);
 
   const handleStartGame = (t1: Team, t2: Team, max: 15 | 30) => {
-    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false });
+    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false, picaHistory: [] });
     setView(GameView.PLAYING);
   };
 
@@ -100,7 +211,15 @@ const App: React.FC = () => {
     });
   };
 
-  const saveToHistory = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
+  const updatePicaHistory = (newDuels: PicaDuel[]) => {
+    if (!currentGame) return;
+    setCurrentGame(prev => {
+      if (!prev) return null;
+      return { ...prev, picaHistory: [...(prev.picaHistory || []), newDuels] };
+    });
+  };
+
+  const saveToHistory = (notes: string, duermeAfuera: boolean) => {
     if (!currentGame) return null;
     const winner = currentGame.score1 >= currentGame.maxPoints ? currentGame.team1 : currentGame.team2;
     
@@ -117,32 +236,69 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       notes,
       duermeAfuera,
-      picaHistory
+      picaHistory: currentGame.picaHistory || []
     };
     
     setHistory(prev => [newRecord, ...prev].slice(0, 100));
     return newRecord;
   };
 
-  const handleFinishGame = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
-    saveToHistory(notes, duermeAfuera, picaHistory);
+  const handleFinishGame = (notes: string, duermeAfuera: boolean) => {
+    saveToHistory(notes, duermeAfuera);
     setCurrentGame(null);
     setView(GameView.SETUP);
   };
 
-  const handleRematch = (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => {
-    saveToHistory(notes, duermeAfuera, picaHistory);
+  const handleRematch = (notes: string, duermeAfuera: boolean) => {
+    saveToHistory(notes, duermeAfuera);
     if (currentGame) {
       setCurrentGame({
         ...currentGame,
         score1: 0,
         score2: 0,
-        nextHandIsPica: false
+        nextHandIsPica: false,
+        picaHistory: []
       });
     }
   };
 
-  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false });
+  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false, picaHistory: [] });
+
+  // CRUD de jugadores
+  const handleSavePlayer = (player: Player) => {
+    setPlayers(prev => {
+      const idx = prev.findIndex(p => p.id === player.id);
+      if (idx > -1) {
+        const updated = [...prev];
+        updated[idx] = player;
+        return updated;
+      }
+      return [...prev, player];
+    });
+  };
+
+  const handleDeletePlayer = (playerId: string) => {
+    // Verificar que no esté en uso en ningún equipo
+    const inUse = teams.some(t => t.playerIds.includes(playerId));
+    if (inUse) {
+      alert('No se puede eliminar: el jugador está en un equipo');
+      return;
+    }
+    setPlayers(prev => prev.filter(p => p.id !== playerId));
+  };
+
+  const handleDeleteGame = (gameId: string) => {
+    const gameToDelete = history.find(g => g.id === gameId);
+    if (!gameToDelete) return;
+
+    // Restar 1 win al equipo ganador
+    setTeams(prev => prev.map(t =>
+      t.name === gameToDelete.winnerName ? { ...t, wins: Math.max(0, t.wins - 1) } : t
+    ));
+
+    // Eliminar del historial
+    setHistory(prev => prev.filter(g => g.id !== gameId));
+  };
 
   if (loading) {
     return (
@@ -200,36 +356,41 @@ const App: React.FC = () => {
         )}
 
         {view === GameView.PLAYING && !currentGame && (
-          <TeamSetup 
-            existingTeams={teams} 
-            onStart={handleStartGame} 
+          <TeamSetup
+            existingTeams={teams}
+            players={players}
+            onStart={handleStartGame}
             onSaveTeam={(t) => setTeams(prev => {
               const idx = prev.findIndex(item => item.id === t.id);
               if (idx > -1) { const n = [...prev]; n[idx] = t; return n; }
               return [...prev, t];
-            })} 
-            onBack={() => setView(GameView.SETUP)} 
-            onDeleteTeam={(id) => confirm('¿Borrar equipo?') && setTeams(prev => prev.filter(t => t.id !== id))} 
+            })}
+            onSavePlayer={handleSavePlayer}
+            onDeletePlayer={handleDeletePlayer}
+            onBack={() => setView(GameView.SETUP)}
+            onDeleteTeam={(id) => confirm('¿Borrar equipo?') && setTeams(prev => prev.filter(t => t.id !== id))}
           />
         )}
 
         {view === GameView.PLAYING && currentGame && (
-          <ScoreBoard 
-            team1={currentGame.team1} 
-            team2={currentGame.team2} 
-            score1={currentGame.score1} 
-            score2={currentGame.score2} 
-            maxPoints={currentGame.maxPoints} 
-            onUpdateScore={updateScore} 
-            onReset={resetGame} 
-            onHome={() => setView(GameView.SETUP)} 
+          <ScoreBoard
+            team1={currentGame.team1}
+            team2={currentGame.team2}
+            score1={currentGame.score1}
+            score2={currentGame.score2}
+            maxPoints={currentGame.maxPoints}
+            players={players}
+            onUpdateScore={updateScore}
+            onUpdatePicaHistory={updatePicaHistory}
+            onReset={resetGame}
+            onHome={() => setView(GameView.SETUP)}
             onFinish={handleFinishGame}
             onRematch={handleRematch}
           />
         )}
 
         {view === GameView.LEADERBOARD && (
-          <Leaderboard history={history} onBack={() => setView(GameView.SETUP)} />
+          <Leaderboard history={history} players={players} onBack={() => setView(GameView.SETUP)} onDeleteGame={handleDeleteGame} />
         )}
       </main>
     </div>

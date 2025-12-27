@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Team, PicaDuel } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Team, PicaDuel, Player } from '../types';
 import Fosforos from './Fosforos';
 import { Plus, Minus, Home, RotateCcw, Trophy, Tent, ChevronRight, Zap, X, Check, Repeat, RefreshCw, Undo2 } from 'lucide-react';
 
@@ -10,16 +10,22 @@ interface ScoreBoardProps {
   score1: number;
   score2: number;
   maxPoints: number;
+  players: Player[];
   onUpdateScore: (teamIndex: 1 | 2, delta: number, setPicaNext?: boolean) => void;
+  onUpdatePicaHistory: (duels: PicaDuel[]) => void;
   onReset: () => void;
   onHome: () => void;
-  onFinish: (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => void;
-  onRematch: (notes: string, duermeAfuera: boolean, picaHistory: PicaDuel[][]) => void;
+  onFinish: (notes: string, duermeAfuera: boolean) => void;
+  onRematch: (notes: string, duermeAfuera: boolean) => void;
 }
 
 const ScoreBoard: React.FC<ScoreBoardProps> = ({
-  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, onUpdateScore, onReset, onHome, onFinish, onRematch
+  team1: initialTeam1, team2: initialTeam2, score1, score2, maxPoints, players, onUpdateScore, onUpdatePicaHistory, onReset, onHome, onFinish, onRematch
 }) => {
+  // Helper para obtener nombre de jugador por ID
+  const getPlayerName = (playerId: string) => players.find(p => p.id === playerId)?.name || 'Desconocido';
+  const getTeamPlayerNames = (team: Team) => team.playerIds.map(id => getPlayerName(id)).join(' · ');
+
   const isGameOver = score1 >= maxPoints || score2 >= maxPoints;
   const [notes, setNotes] = useState('');
   const [isDuermeAfuera, setIsDuermeAfuera] = useState(false);
@@ -28,7 +34,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [handScore1, setHandScore1] = useState(0);
   const [handScore2, setHandScore2] = useState(0);
 
-  const is3v3 = initialTeam1.players.length === 3 && initialTeam2.players.length === 3;
+  const is3v3 = initialTeam1.playerIds.length === 3 && initialTeam2.playerIds.length === 3;
   const [lastHandWasPica, setLastHandWasPica] = useState(false);
   
   const isPicaRange = is3v3 && (score1 >= 5 || score2 >= 5) && (score1 < 25 && score2 < 25);
@@ -37,8 +43,6 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const [showPicaPicaModal, setShowPicaPicaModal] = useState(false);
   const [picaMatchScores, setPicaMatchScores] = useState<[number, number][]>([[0,0], [0,0], [0,0]]);
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
-  const [gamePicaHistory, setGamePicaHistory] = useState<PicaDuel[][]>([]);
-  const gamePicaHistoryRef = useRef<PicaDuel[][]>([]);
   
   // Estado para undo de última mano
   const [lastAction, setLastAction] = useState<{
@@ -76,16 +80,15 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
   const handlePicaPicaSubmit = () => {
     const roundDuels: PicaDuel[] = picaMatchScores.map((scores, idx) => ({
-      p1: initialTeam1.players[idx],
-      p2: localTeam2.players[idx],
+      p1Id: initialTeam1.playerIds[idx],
+      p2Id: localTeam2.playerIds[idx],
       s1: scores[0],
       s2: scores[1]
     }));
 
-    // Usar ref para tener el valor actualizado inmediatamente (fix race condition)
-    const newHistory = [...gamePicaHistoryRef.current, roundDuels];
-    gamePicaHistoryRef.current = newHistory;
-    setGamePicaHistory(newHistory);
+    // Guardar en Firestore via App.tsx (se persiste automaticamente)
+    onUpdatePicaHistory(roundDuels);
+    
     const totalT1 = picaMatchScores.reduce((acc, curr) => acc + curr[0], 0);
     const totalT2 = picaMatchScores.reduce((acc, curr) => acc + curr[1], 0);
     const diff = totalT1 - totalT2;
@@ -125,17 +128,17 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
     } else if (swapIndex === idx) {
       setSwapIndex(null);
     } else {
-      const newPlayers = [...localTeam2.players];
-      const temp = newPlayers[swapIndex];
-      newPlayers[swapIndex] = newPlayers[idx];
-      newPlayers[idx] = temp;
-      
+      const newPlayerIds = [...localTeam2.playerIds];
+      const temp = newPlayerIds[swapIndex];
+      newPlayerIds[swapIndex] = newPlayerIds[idx];
+      newPlayerIds[idx] = temp;
+
       const newScores = [...picaMatchScores] as [number, number][];
       const tempScore = newScores[swapIndex];
       newScores[swapIndex] = newScores[idx];
       newScores[idx] = tempScore;
 
-      setLocalTeam2({ ...localTeam2, players: newPlayers });
+      setLocalTeam2({ ...localTeam2, playerIds: newPlayerIds });
       setPicaMatchScores(newScores);
       setSwapIndex(null);
     }
@@ -179,7 +182,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
              <div className="mb-4 text-center w-full px-2">
                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1">{initialTeam1.name}</span>
                <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider block mb-3 truncate">
-                 {initialTeam1.players.join(' · ')}
+                 {getTeamPlayerNames(initialTeam1)}
                </span>
                <div className="text-7xl sm:text-8xl font-black text-white tracking-tighter tabular-nums score-val leading-none italic">
                  {Math.min(score1 + handScore1, maxPoints)}
@@ -198,7 +201,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
              <div className="mb-4 text-center w-full px-2">
                <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest block mb-1">{initialTeam2.name}</span>
                <span className="text-[8px] font-bold text-gray-600 uppercase tracking-wider block mb-3 truncate">
-                 {initialTeam2.players.join(' · ')}
+                 {getTeamPlayerNames(initialTeam2)}
                </span>
                <div className="text-7xl sm:text-8xl font-black text-white tracking-tighter tabular-nums score-val leading-none italic">
                  {Math.min(score2 + handScore2, maxPoints)}
@@ -281,7 +284,7 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                 <div className="flex items-center justify-between px-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-[7px] font-black text-blue-500 uppercase opacity-40 mb-0.5 tracking-widest">Nosotros</p>
-                    <p className="text-sm font-black text-white truncate leading-tight uppercase italic">{initialTeam1.players[idx]}</p>
+                    <p className="text-sm font-black text-white truncate leading-tight uppercase italic">{getPlayerName(initialTeam1.playerIds[idx])}</p>
                   </div>
                   
                   <div className="mx-3 text-[9px] font-black text-white/5 italic uppercase shrink-0">vs</div>
@@ -290,11 +293,11 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
                     <p className="text-[7px] font-black text-rose-500 uppercase opacity-40 mb-0.5 tracking-widest flex items-center justify-end gap-1">
                       Ellos <Repeat size={8} />
                     </p>
-                    <button 
+                    <button
                       onClick={() => handleSwapLocalPlayer(idx)}
                       className={`text-sm font-black text-right truncate leading-tight uppercase italic transition-all ${swapIndex === idx ? 'text-amber-500 underline underline-offset-4 decoration-amber-500/50' : 'text-white'}`}
                     >
-                      {localTeam2.players[idx]}
+                      {getPlayerName(localTeam2.playerIds[idx])}
                     </button>
                   </div>
                 </div>
@@ -386,12 +389,12 @@ const ScoreBoard: React.FC<ScoreBoardProps> = ({
 
             <div className="pt-4 space-y-4">
               <button 
-                onClick={() => onRematch(notes, isDuermeAfuera, gamePicaHistoryRef.current)} 
+                onClick={() => onRematch(notes, isDuermeAfuera)} 
                 className="w-full py-6 bg-blue-600 text-white font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-[0_15px_40px_rgba(37,99,235,0.3)] text-xs flex items-center justify-center gap-3 italic"
               >
                 REVANCHA <RefreshCw size={20} strokeWidth={3} />
               </button>
-              <button onClick={() => onFinish(notes, isDuermeAfuera, gamePicaHistoryRef.current)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
+              <button onClick={() => onFinish(notes, isDuermeAfuera)} className="w-full py-6 bg-emerald-500 text-black font-black uppercase tracking-[0.4em] rounded-[28px] active:scale-95 shadow-2xl text-xs flex items-center justify-center gap-3 italic">
                 CERRAR PARTIDA <ChevronRight size={20} strokeWidth={3} />
               </button>
               <button onClick={onReset} className="w-full py-3 text-[10px] font-black text-gray-800 uppercase tracking-[0.4em] hover:text-rose-500 transition-colors italic">DESCARTAR REGISTRO</button>

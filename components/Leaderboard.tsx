@@ -1,14 +1,18 @@
 
 import React, { useState } from 'react';
-import { GameRecord, PicaDuel } from '../types';
-import { ArrowLeft, Tent, MessageSquare, Trophy, Target, Zap, ChevronDown, ChevronUp, Users, History, BarChart3, Medal, Calendar } from 'lucide-react';
+import { GameRecord, PicaDuel, Player } from '../types';
+import { ArrowLeft, Tent, MessageSquare, Trophy, Target, Zap, ChevronDown, ChevronUp, Users, History, BarChart3, Medal, Calendar, Trash2 } from 'lucide-react';
 
 interface LeaderboardProps {
   history: GameRecord[];
+  players: Player[];
   onBack: () => void;
+  onDeleteGame: (gameId: string) => void;
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ history, players, onBack, onDeleteGame }) => {
+  // Helper para obtener nombre de jugador por ID
+  const getPlayerName = (playerId: string) => players.find(p => p.id === playerId)?.name || playerId;
   const [activeTab, setActiveTab] = useState<'EQUIPOS' | 'HISTORIAL' | 'PICA'>('EQUIPOS');
   const [expandedGame, setExpandedGame] = useState<string | null>(null);
 
@@ -41,19 +45,22 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
       if (!game.picaHistory) return;
       game.picaHistory.forEach(round => {
         round.forEach(duel => {
-          [ {n: duel.p1, s: duel.s1, o: duel.s2}, {n: duel.p2, s: duel.s2, o: duel.s1} ].forEach(p => {
-            if (!stats[p.n]) stats[p.n] = { points: 0, wins: 0, duels: 0, maxInOne: 0 };
-            stats[p.n].points += p.s;
-            stats[p.n].duels += 1;
-            stats[p.n].wins += p.s > p.o ? 1 : 0;
-            stats[p.n].maxInOne = Math.max(stats[p.n].maxInOne, p.s);
+          // Usar p1Id y p2Id (nuevo formato)
+          [ {id: duel.p1Id, s: duel.s1, o: duel.s2}, {id: duel.p2Id, s: duel.s2, o: duel.s1} ].forEach(p => {
+            if (!p.id) return; // Skip si no hay ID
+            if (!stats[p.id]) stats[p.id] = { points: 0, wins: 0, duels: 0, maxInOne: 0 };
+            stats[p.id].points += p.s;
+            stats[p.id].duels += 1;
+            stats[p.id].wins += p.s > p.o ? 1 : 0;
+            stats[p.id].maxInOne = Math.max(stats[p.id].maxInOne, p.s);
           });
         });
       });
     });
 
-    return Object.entries(stats).map(([name, data]) => ({
-      name,
+    // Resolver nombres al final
+    return Object.entries(stats).map(([id, data]) => ({
+      name: getPlayerName(id),
       ...data,
       winRate: data.duels > 0 ? (data.wins / data.duels) * 100 : 0
     })).sort((a, b) => b.points - a.points);
@@ -145,9 +152,15 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
                      <Calendar size={12} className="text-gray-600" />
                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{formatDate(game.timestamp)}</span>
                    </div>
-                   <div className="flex gap-2.5">
+                   <div className="flex gap-2.5 items-center">
                      {game.picaHistory && game.picaHistory.length > 0 && <span className="bg-amber-500/10 text-amber-500 text-[9px] font-black px-3 py-1 rounded-full border border-amber-500/20 italic">3v3 PICA</span>}
                      <span className="bg-white/5 text-gray-500 text-[9px] font-black px-3 py-1 rounded-full border border-white/5 italic">A {game.maxPoints}</span>
+                     <button
+                       onClick={() => confirm('¿Borrar esta partida?') && onDeleteGame(game.id)}
+                       className="p-2 text-gray-600 hover:text-rose-500 active:scale-90 transition-all ml-1"
+                     >
+                       <Trash2 size={14} />
+                     </button>
                    </div>
                 </div>
                 
@@ -197,9 +210,9 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ history, onBack }) => {
                                 <p className="text-[9px] font-black text-amber-500/50 uppercase tracking-[0.3em] italic">Mano {rIdx + 1}</p>
                                 {round.map((duel, dIdx) => (
                                   <div key={dIdx} className="flex justify-between items-center text-[11px] font-bold">
-                                    <span className="flex-1 truncate text-gray-500 uppercase italic">{duel.p1}</span>
+                                    <span className="flex-1 truncate text-gray-500 uppercase italic">{getPlayerName(duel.p1Id)}</span>
                                     <span className="px-5 text-white tabular-nums font-black text-sm italic">{duel.s1} - {duel.s2}</span>
-                                    <span className="flex-1 truncate text-right text-gray-500 uppercase italic">{duel.p2}</span>
+                                    <span className="flex-1 truncate text-right text-gray-500 uppercase italic">{getPlayerName(duel.p2Id)}</span>
                                   </div>
                                 ))}
                               </div>
