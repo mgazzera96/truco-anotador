@@ -39,13 +39,25 @@ const App: React.FC = () => {
 
     const unsubHistory = onSnapshot(doc(db, 'config', 'history'), (snapshot) => {
       if (snapshot.exists()) {
-        setHistory(snapshot.data().list || []);
+        // Deserializar picaHistory de cada GameRecord (guardado como JSON string para evitar nested arrays)
+        const list = (snapshot.data().list || []).map((record: GameRecord) => ({
+          ...record,
+          picaHistory: typeof record.picaHistory === 'string' 
+            ? JSON.parse(record.picaHistory) 
+            : (record.picaHistory || [])
+        }));
+        setHistory(list);
       }
     });
 
     const unsubCurrentGame = onSnapshot(doc(db, 'config', 'currentGame'), (snapshot) => {
       if (snapshot.exists() && snapshot.data().game) {
-        setCurrentGame(snapshot.data().game);
+        const game = snapshot.data().game;
+        // Deserializar picaHistory (guardado como JSON string para evitar nested arrays)
+        const picaHistory = typeof game.picaHistory === 'string' 
+          ? JSON.parse(game.picaHistory) 
+          : (game.picaHistory || []);
+        setCurrentGame({ ...game, picaHistory });
       } else {
         setCurrentGame(null);
       }
@@ -68,14 +80,24 @@ const App: React.FC = () => {
   // Guardar history en Firestore cuando cambie
   useEffect(() => {
     if (!loading) {
-      setDoc(doc(db, 'config', 'history'), { list: history });
+      // Serializar picaHistory de cada GameRecord (Firestore no soporta nested arrays)
+      const historyToSave = history.map(record => ({
+        ...record,
+        picaHistory: JSON.stringify(record.picaHistory || [])
+      }));
+      setDoc(doc(db, 'config', 'history'), { list: historyToSave });
     }
   }, [history, loading]);
 
   // Guardar currentGame en Firestore cuando cambie
   useEffect(() => {
     if (!loading) {
-      setDoc(doc(db, 'config', 'currentGame'), { game: currentGame });
+      // Serializar picaHistory (Firestore no soporta nested arrays)
+      const gameToSave = currentGame ? {
+        ...currentGame,
+        picaHistory: JSON.stringify(currentGame.picaHistory || [])
+      } : null;
+      setDoc(doc(db, 'config', 'currentGame'), { game: gameToSave });
     }
   }, [currentGame, loading]);
 
