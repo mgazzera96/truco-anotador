@@ -21,10 +21,29 @@ const DEFAULT_TEAMS: Team[] = [
   { id: 'team-2', name: 'Ellos', playerIds: ['player-4', 'player-5', 'player-6'], wins: 0 }
 ];
 
+const BACKUP_KEYS = {
+  players: 'truco-backup-players',
+  teams: 'truco-backup-teams',
+  history: 'truco-backup-history',
+  currentGame: 'truco-backup-currentGame',
+  timestamp: 'truco-backup-timestamp'
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<GameView>(GameView.SETUP);
-  const [loading, setLoading] = useState(true);
-  
+
+  // Flags individuales de carga para evitar race conditions
+  const [loadedPlayers, setLoadedPlayers] = useState(false);
+  const [loadedTeams, setLoadedTeams] = useState(false);
+  const [loadedHistory, setLoadedHistory] = useState(false);
+  const [loadedCurrentGame, setLoadedCurrentGame] = useState(false);
+
+  const loading = !loadedPlayers || !loadedTeams || !loadedHistory || !loadedCurrentGame;
+
+  // Estado para modal de recuperación de backup
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [backupData, setBackupData] = useState<{ teams: Team[]; history: GameRecord[] } | null>(null);
+
   const [players, setPlayers] = useState<Player[]>(DEFAULT_PLAYERS);
   const [teams, setTeams] = useState<Team[]>(DEFAULT_TEAMS);
   const [history, setHistory] = useState<GameRecord[]>([]);
@@ -36,6 +55,7 @@ const App: React.FC = () => {
     maxPoints: 15 | 30;
     nextHandIsPica: boolean;
     picaHistory: PicaDuel[][];
+    noMostro: string[];
   } | null>(null);
 
   // Cargar datos desde Firestore al iniciar
@@ -47,6 +67,7 @@ const App: React.FC = () => {
         // Si no existe o está vacío, usar defaults
         setPlayers(DEFAULT_PLAYERS);
       }
+      setLoadedPlayers(true);
     });
 
     const unsubTeams = onSnapshot(doc(db, 'config', 'teams'), (snapshot) => {
@@ -83,7 +104,7 @@ const App: React.FC = () => {
 
         setTeams(migratedTeams);
       }
-      setLoading(false);
+      setLoadedTeams(true);
     });
 
     const unsubHistory = onSnapshot(doc(db, 'config', 'history'), (snapshot) => {
@@ -91,12 +112,13 @@ const App: React.FC = () => {
         // Deserializar picaHistory de cada GameRecord (guardado como JSON string para evitar nested arrays)
         const list = (snapshot.data().list || []).map((record: GameRecord) => ({
           ...record,
-          picaHistory: typeof record.picaHistory === 'string' 
-            ? JSON.parse(record.picaHistory) 
+          picaHistory: typeof record.picaHistory === 'string'
+            ? JSON.parse(record.picaHistory)
             : (record.picaHistory || [])
         }));
         setHistory(list);
       }
+      setLoadedHistory(true);
     });
 
     const unsubCurrentGame = onSnapshot(doc(db, 'config', 'currentGame'), (snapshot) => {
@@ -136,11 +158,13 @@ const App: React.FC = () => {
           ...game,
           team1: migrateTeam(game.team1),
           team2: migrateTeam(game.team2),
-          picaHistory
+          picaHistory,
+          noMostro: game.noMostro || []
         });
       } else {
         setCurrentGame(null);
       }
+      setLoadedCurrentGame(true);
     });
 
     return () => {
@@ -151,21 +175,25 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Guardar players en Firestore cuando cambien
+  // Guardar players en Firestore y localStorage cuando cambien
   useEffect(() => {
     if (!loading) {
       setDoc(doc(db, 'config', 'players'), { list: players });
+      localStorage.setItem(BACKUP_KEYS.players, JSON.stringify(players));
+      localStorage.setItem(BACKUP_KEYS.timestamp, Date.now().toString());
     }
   }, [players, loading]);
 
-  // Guardar teams en Firestore cuando cambien
+  // Guardar teams en Firestore y localStorage cuando cambien
   useEffect(() => {
     if (!loading) {
       setDoc(doc(db, 'config', 'teams'), { list: teams });
+      localStorage.setItem(BACKUP_KEYS.teams, JSON.stringify(teams));
+      localStorage.setItem(BACKUP_KEYS.timestamp, Date.now().toString());
     }
   }, [teams, loading]);
 
-  // Guardar history en Firestore cuando cambie
+  // Guardar history en Firestore y localStorage cuando cambie
   useEffect(() => {
     if (!loading) {
       // Serializar picaHistory de cada GameRecord (Firestore no soporta nested arrays)
@@ -174,10 +202,12 @@ const App: React.FC = () => {
         picaHistory: JSON.stringify(record.picaHistory || [])
       }));
       setDoc(doc(db, 'config', 'history'), { list: historyToSave });
+      localStorage.setItem(BACKUP_KEYS.history, JSON.stringify(history));
+      localStorage.setItem(BACKUP_KEYS.timestamp, Date.now().toString());
     }
   }, [history, loading]);
 
-  // Guardar currentGame en Firestore cuando cambie
+  // Guardar currentGame en Firestore y localStorage cuando cambie
   useEffect(() => {
     if (!loading) {
       // Serializar picaHistory (Firestore no soporta nested arrays)
@@ -186,11 +216,53 @@ const App: React.FC = () => {
         picaHistory: JSON.stringify(currentGame.picaHistory || [])
       } : null;
       setDoc(doc(db, 'config', 'currentGame'), { game: gameToSave });
+      localStorage.setItem(BACKUP_KEYS.currentGame, JSON.stringify(currentGame));
+      localStorage.setItem(BACKUP_KEYS.timestamp, Date.now().toString());
     }
   }, [currentGame, loading]);
 
+  // Detectar si hay backup disponible cuando Firestore está vacío
+  useEffect(() => {
+    if (!loading && !showRecoveryModal) {
+      const backupTeams = localStorage.getItem(BACKUP_KEYS.teams);
+      const backupHistory = localStorage.getItem(BACKUP_KEYS.history);
+
+      // Si Firestore tiene equipos vacíos o default pero hay backup con datos
+      const teamsAreEmpty = teams.length === 0 ||
+        (teams.length === 2 && teams[0].id === 'team-1' && teams[0].wins === 0 && teams[1].wins === 0);
+
+      if (teamsAreEmpty && backupTeams) {
+        try {
+          const parsedTeams = JSON.parse(backupTeams);
+          const parsedHistory = backupHistory ? JSON.parse(backupHistory) : [];
+
+          // Solo mostrar si el backup tiene datos significativos
+          const backupHasWins = parsedTeams.some((t: Team) => t.wins > 0);
+          const backupHasHistory = parsedHistory.length > 0;
+
+          if (backupHasWins || backupHasHistory) {
+            setBackupData({ teams: parsedTeams, history: parsedHistory });
+            setShowRecoveryModal(true);
+          }
+        } catch {
+          // Ignorar errores de parsing
+        }
+      }
+    }
+  }, [loading, teams, showRecoveryModal]);
+
+  // Función para restaurar desde backup
+  const restoreFromBackup = () => {
+    if (backupData) {
+      setTeams(backupData.teams);
+      setHistory(backupData.history);
+      setShowRecoveryModal(false);
+      setBackupData(null);
+    }
+  };
+
   const handleStartGame = (t1: Team, t2: Team, max: 15 | 30) => {
-    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false, picaHistory: [] });
+    setCurrentGame({ team1: t1, team2: t2, score1: 0, score2: 0, maxPoints: max, nextHandIsPica: false, picaHistory: [], noMostro: [] });
     setView(GameView.PLAYING);
   };
 
@@ -236,7 +308,8 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       notes,
       duermeAfuera,
-      picaHistory: currentGame.picaHistory || []
+      picaHistory: currentGame.picaHistory || [],
+      noMostro: currentGame.noMostro || []
     };
     
     setHistory(prev => [newRecord, ...prev].slice(0, 100));
@@ -257,12 +330,21 @@ const App: React.FC = () => {
         score1: 0,
         score2: 0,
         nextHandIsPica: false,
-        picaHistory: []
+        picaHistory: [],
+        noMostro: []
       });
     }
   };
 
-  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false, picaHistory: [] });
+  const resetGame = () => currentGame && setCurrentGame({ ...currentGame, score1: 0, score2: 0, nextHandIsPica: false, picaHistory: [], noMostro: [] });
+
+  const addNoMostro = (playerId: string) => {
+    if (!currentGame) return;
+    setCurrentGame(prev => prev ? {
+      ...prev,
+      noMostro: [...(prev.noMostro || []), playerId]
+    } : null);
+  };
 
   // CRUD de jugadores
   const handleSavePlayer = (player: Player) => {
@@ -380,8 +462,10 @@ const App: React.FC = () => {
             score2={currentGame.score2}
             maxPoints={currentGame.maxPoints}
             players={players}
+            noMostro={currentGame.noMostro}
             onUpdateScore={updateScore}
             onUpdatePicaHistory={updatePicaHistory}
+            onAddNoMostro={addNoMostro}
             onReset={resetGame}
             onHome={() => setView(GameView.SETUP)}
             onFinish={handleFinishGame}
@@ -393,6 +477,33 @@ const App: React.FC = () => {
           <Leaderboard history={history} players={players} onBack={() => setView(GameView.SETUP)} onDeleteGame={handleDeleteGame} />
         )}
       </main>
+
+      {/* Modal de recuperación de backup */}
+      {showRecoveryModal && backupData && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="app-card p-6 max-w-sm space-y-4">
+            <h2 className="text-lg font-bold text-white">Recuperar Datos?</h2>
+            <p className="text-sm text-gray-400">
+              Se encontró un backup local con {backupData.teams.length} equipos
+              y {backupData.history.length} partidos guardados.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={restoreFromBackup}
+                className="flex-1 py-3 btn-primary rounded-xl font-bold text-sm"
+              >
+                Restaurar
+              </button>
+              <button
+                onClick={() => { setShowRecoveryModal(false); setBackupData(null); }}
+                className="flex-1 py-3 btn-secondary rounded-xl font-bold text-sm text-gray-400"
+              >
+                Ignorar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
